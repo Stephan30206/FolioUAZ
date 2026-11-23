@@ -1,0 +1,88 @@
+import React,{useEffect,useRef,useState} from "react";
+import {flushSync} from "react-dom";
+import {Icon,FormField,ProgressDrop,Stage,Notice,Modal,validerFichier,titreFichier,go,api,Badge,date,score,Loading} from "./ui";
+import {ajouterSource} from "./depot";
+
+export function Liste({items,centre=false,config={},agenda=[]}:any){
+ const [query,S]=useState(""),[filter,F]=useState(centre?"attente":"tous"),[priorite,P]=useState(""),[cours,CO]=useState("");
+ const coursDe=(d:any)=>agenda.find((a:any)=>a.id===d.devoir_cours)?.cours||"";
+ const niveau=(d:any)=>config.bas==null||d.score==null?"Non classée":d.score<=config.bas?"Basse":d.score<=config.moyen?"Normale":"Haute";
+ const list=items.filter((d:any)=>(!priorite||niveau(d)===priorite)&&(!cours||coursDe(d)===cours)&&(filter==="tous"||filter==="attente"&&["en_revue","reexamen","incomplet"].includes(d.etat)||filter===d.etat)&&[d.titre,d.etudiant,d.fichier].join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ if(centre)list.sort((a:any,b:any)=>(b.score??-1)-(a.score??-1));
+ return <section className="panel listing"><div className="listbar"><label className="search"><Icon name="search" size={17}/><input aria-label="Rechercher un devoir" value={query} onChange={e=>S(e.target.value)} placeholder="Rechercher un devoir…"/></label><select aria-label="Filtrer par état" value={filter} onChange={e=>F(e.target.value)}><option value="tous">Tous les états</option><option value="attente">À examiner</option><option value="corriger">À corriger</option><option value="pret">Prêts à remettre</option><option value="incomplet">À compléter</option><option value="remis">Remis</option><option value="transmis">Transmis</option><option value="disciplinaire">Orienté vers la procédure disciplinaire</option></select>{centre&&agenda.length>0&&<select aria-label="Filtrer par cours" value={cours} onChange={e=>CO(e.target.value)}><option value="">Tous les cours</option>{[...new Set<string>(agenda.map((a:any)=>a.cours))].map(c=><option key={c}>{c}</option>)}</select>}{centre&&<select aria-label="Filtrer par priorité" value={priorite} onChange={e=>P(e.target.value)}><option value="">Toutes les priorités</option>{["Haute","Normale","Basse","Non classée"].map(p=><option key={p}>{p}</option>)}</select>}</div>
+ {list.length?<div className="tablewrap"><table><thead><tr><th>Devoir</th>{centre&&<><th>Similitude</th><th>Passages</th><th>Priorité</th></>}<th>État</th><th>Dépôt</th><th><span className="sr">Rapport</span></th></tr></thead><tbody>{list.map((d:any)=><tr key={d.id}><td><a className="table-title" href={"#rapport/"+d.id}><Icon name="file-text" size={19}/><span>{d.titre}<small>{d.etudiant||d.fichier} · v{d.version}</small></span></a></td>{centre&&<><td>{score(d.score)}</td><td>{d.passages??"—"}</td><td>{niveau(d)}</td></>}<td><Badge state={d.etat}/></td><td>{date(d.cree)}</td><td><a className="iconbutton" href={"#rapport/"+d.id} aria-label={"Ouvrir "+d.titre}><Icon name="chevron-right" size={18}/></a></td></tr>)}</tbody></table></div>:<div className="empty"><span className="soft-icon"><Icon name={centre?"clipboard-check":"files"} size={25}/></span><h2>{query||items.length?"Aucun devoir pour cette recherche":centre?"Aucun devoir en attente":"Votre premier devoir"}</h2><p>{centre?"Les devoirs à examiner apparaissent ici après leur dépôt.":"Déposez un fichier pour retrouver son rapport dans cet espace."}</p>{!centre&&<button className="secondary" onClick={()=>go("depot")}>Déposer un devoir</button>}</div>}</section>
+}
+
+export function Sources({espace,reload}:any){
+ const [modal,M]=useState(false),[file,F]=useState<File|null>(null),[titre,T]=useState(""),[err,E]=useState(""),[prog,G]=useState<any>(null),[detail,D]=useState<any>(null);
+ const ctl=useRef<AbortController|null>(null),id=useRef(crypto.randomUUID()),reading=useRef(0),lock=useRef(false);
+ useEffect(()=>()=>{ctl.current?.abort();reading.current++},[]);
+ const items=[...espace.sources.map((s:any)=>({id:s.id,title:s.titre,description:s.fichier,category:s.protection?"Archive du centre":s.partage===1?"Référence du centre":"Source importée",protection:!!s.protection}))];
+ function choose(f:File){const e=validerFichier(f);if(e){E(e);return}E("");F(f);T(titreFichier(f.name));id.current=crypto.randomUUID();}
+ function close(){ctl.current?.abort();M(false);F(null);T("");E("");G(null);}
+ async function add(e:React.FormEvent){e.preventDefault();if(lock.current)return;if(!file||!titre.trim()){E("Choisissez le fichier et indiquez son titre.");return}lock.current=true;const c=new AbortController();ctl.current=c;E("");G({label:"Lecture du texte…",n:.05});try{await ajouterSource(file,titre,c.signal,G,id.current);await reload();close()}catch(e){if(!c.signal.aborted)E((e as Error).message)}finally{G(null);lock.current=false}}
+ async function show(s:any){if(s.protection){D({...s,text:"Ce devoir archivé est réservé au centre. La comparaison signale uniquement les mots que votre devoir partage avec lui."});return}const t=++reading.current;D({...s,loading:!s.text});if(!s.text)try{const val=await api("sources/"+s.id);if(t===reading.current)D({...s,...val,loading:false})}catch(e){if(t===reading.current)D({...s,error:(e as Error).message})}}
+ return <><div className="source-top"><span>{items.length} sources disponibles</span>{espace.admin&&<button className="primary" onClick={()=>M(true)}><Icon name="plus" size={17}/>Ajouter une source</button>}</div><div className="source-grid">{items.map(s=><button className="panel source-card" key={s.id} onClick={()=>show(s)}><span className="soft-icon cream"><Icon name="book-marked" size={21}/></span><small>{s.category}</small><h2>{s.title}</h2><p>{s.description}</p><span className="text-button">{s.protection?"À propos de cette archive":"Lire la source"} <Icon name="chevron-right" size={15}/></span></button>)}</div>
+ {detail&&<Modal title={detail.title} onClose={()=>{reading.current++;D(null)}}>{detail.error?<Notice tone="error">{detail.error}</Notice>:detail.loading?<Loading/>:<div className="longtext">{detail.text}</div>}</Modal>}
+ {modal&&<Modal title="Ajouter une source" onClose={close}><p>{espace.centre?"Cette référence sera lisible par les comptes autorisés du portail. Pour archiver un devoir étudiant, utilisez son rapport et vérifiez l’accord du déposant.":"Ce document de référence reste dans votre espace et pourra servir pour vos prochaines analyses."}</p><form onSubmit={add}><ProgressDrop file={file} onFile={choose} onClear={()=>F(null)} disabled={!!prog}/><FormField label="Titre de la source"><input value={titre} maxLength={160} required onChange={e=>T(e.target.value)} disabled={!!prog}/></FormField>{err&&<Notice tone="error">{err}</Notice>}{prog&&<Stage progress={prog}/>}<div className="actions"><button type="button" className="secondary" onClick={close}>Annuler</button><button className="primary" disabled={!!prog}>Ajouter la source</button></div></form></Modal>}</>
+}
+function Texte({text,r}:any){
+ const [expanded,S]=useState(false);const limit=expanded?text.length:14000;
+ useEffect(()=>{
+   const expandForPrint=()=>flushSync(()=>S(true));
+   window.addEventListener("beforeprint",expandForPrint);
+   return ()=>window.removeEventListener("beforeprint",expandForPrint);
+ },[]);
+ const intervals=[...r.highlights.map(([a,b]:number[])=>({a,b,tag:"mark"})),...r.exclusions.map(([a,b]:number[])=>({a,b,tag:"del"}))].sort((x,y)=>x.a-y.a);
+ const content:React.ReactNode[]=[];let pos=0;
+ for(const {a,b,tag} of intervals){if(a>=limit)break;const start=Math.max(pos,a),end=Math.min(b,limit);if(end<=start)continue;if(start>pos)content.push(text.slice(pos,start));content.push(tag==="mark"?<mark key={start}>{text.slice(start,end)}</mark>:<span key={start} className="exclu">{text.slice(start,end)}</span>);pos=end;}
+ content.push(text.slice(pos,limit));
+ return <><div className="longtext">{content}</div>{limit<text.length&&<button className="text-button" onClick={()=>S(true)}>Afficher le texte complet</button>}</>
+}
+function ExclusionsRapport({id,options,onResult}:any){
+ const [error,E]=useState(""),[busy,B]=useState(false);
+ async function apercu(e:React.FormEvent<HTMLFormElement>){
+  e.preventDefault();if(busy)return;
+  const f=new FormData(e.currentTarget);B(true);E("");
+  try{onResult(await api("devoirs/"+id+"/apercu-exclusions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bibliographie:f.has("bibliographie"),citations:f.has("citations"),minimum:Number(f.get("minimum"))})}));}catch(e){E((e as Error).message)}finally{B(false)}
+ }
+ return <details className="supplemental"><summary>Aperçu des exclusions du rapport</summary><form onSubmit={apercu}>
+ <label className="choice"><input type="checkbox" name="citations" defaultChecked={options.citations}/>Exclure les passages entre guillemets</label>
+ <label className="choice"><input type="checkbox" name="bibliographie" defaultChecked={options.bibliographie}/>Exclure la bibliographie</label>
+ <FormField label="Longueur minimale des correspondances"><input name="minimum" type="number" min={8} max={100} required defaultValue={options.minimum??8}/></FormField>
+ <p className="fine">L’aperçu recalcule la similitude textuelle. La file de tri conserve le score du dépôt.</p>
+ {error&&<Notice tone="error">{error}</Notice>}<button className="secondary" disabled={busy}>Recalculer l’aperçu</button></form></details>
+}
+export function Rapport({id,espace,reload}:any){
+ const [d,D]=useState<any>(null),[err,E]=useState(""),[tab,T]=useState("texte"),[action,A]=useState(""),[motif,M]=useState(""),[saving,B]=useState(false),[msg,Q]=useState(""),[conseil,C]=useState(""),[passage,Passage]=useState<any>(null),[apercu,AP]=useState<any>(null);
+ 
+ async function actualiser(){D(await api("devoirs/"+id));}
+ useEffect(()=>{let ok=true;D(null);E("");T("texte");Q("");A("");api("devoirs/"+id).then(x=>ok&&D(x)).catch(e=>ok&&E(e.message));return()=>{ok=false}},[id]);
+ async function valider(e:React.FormEvent){e.preventDefault();if(saving)return;B(true);E("");try{
+  if(action==="indexer"){await api("devoirs/"+id+"/indexer",{method:"POST"});Q("Cette version a été ajoutée aux sources de référence.")}
+  else{await api("devoirs/"+id+"/decision",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,motif,conseil})});Q("La décision a été enregistrée.")}
+  await actualiser();await reload();A("");M("");
+ }catch(e){E((e as Error).message)}finally{B(false)}}
+ function ask(s:string){A(s);M("");C("");E("")}
+ if(!d)return err?<Notice tone="error">{err}</Notice>:<Loading message="Ouverture du rapport…"/>;
+ const estEtudiant=d.vue==="etudiant",lectureSeule=d.vue==="professeur";
+ const feedback=d.journal.filter((j:any)=>j.action==="À corriger").at(-1);
+ const r=apercu?.exact??d.exact;const latest=!(espace.centre?espace.revue:espace.devoirs).some((v:any)=>v.dossier===d.dossier&&v.version>d.version);
+ const tabs=[["texte","Texte du devoir"],["sources","Sources"],["suivi","Suivi"]];
+ return <><section className="report-hero panel"><div><div className="kicker"><Icon name="file-search" size={15}/>{estEtudiant?"SUIVI DU DEVOIR":"RAPPORT DE SIMILITUDE"}</div><h2>{d.titre}</h2><p>{d.etudiant?d.etudiant+" · ":""}Version {d.version} · {d.fichier}</p><Badge state={d.etat}/></div>{!estEtudiant&&<div className="scorebox"><span>Similitude textuelle</span><strong>{score(r.score)}</strong><small>{r.covered} mots communs sur {r.eligible} analysés</small></div>}</section>
+ {apercu&&<Notice>Aperçu des exclusions appliqué à la similitude textuelle. <button className="text-button" onClick={()=>AP(null)}>Revenir au rapport initial</button></Notice>}
+ {!estEtudiant&&<>{(r.reason||d.partial)&&<Notice>{r.reason||"Une partie du document n’a pas pu être lue. Le taux affiché concerne le texte extrait."}</Notice>}
+ {d.warnings?.length>0&&<details className="warnings"><summary>Observations sur la lecture du fichier</summary>{d.warnings.map((w:string,i:number)=><p key={i}>{w}</p>)}</details>}
+ <section className="panel report-body"><div className="tabs">{tabs.map(([id,label])=><button key={id} aria-pressed={tab===id} onClick={()=>T(id)} className={tab===id?"sel":""}>{label}</button>)}</div>
+ <div className="tab-content"><div className={"tab-pane "+(tab==="texte"?"visible":"")}><h3>Passages du devoir</h3>{d.signaux!=null&&<p className="muted">Caractères invisibles à examiner · {d.signaux}</p>}<div className="legend"><span><i/>Texte commun</span><span><i/>Partie exclue</span></div><Texte text={d.text} r={r}/>{d.vue==="centre"&&<ExclusionsRapport id={id} options={d.options} onResult={AP}/>}</div>
+ <div className={"tab-pane "+(tab==="sources"?"visible":"")}><h3>Correspondances exactes</h3><p>{r.sources.length} source(s) comparée(s) · {r.matchCount} passage(s) associé(s) à une source.</p>{r.matches.map((m:any,i:number)=><article className="match" key={i}><strong>{m.title}</strong><small>{m.words} mots en commun</small><span>Dans le devoir</span><blockquote>{m.excerpt}</blockquote><span>Dans la source</span><blockquote>{m.sourceExcerpt}</blockquote><button className="secondary" onClick={()=>Passage({titre:m.title,devoir:m.excerpt,source:m.sourceExcerpt})}>Comparer côte à côte</button></article>)}{!r.matches.length&&<p>Aucun passage exact affiché pour le corpus sélectionné.</p>}{r.matchCount>r.matches.length&&<p>Les {r.matches.length} premières correspondances sont détaillées.</p>}<details><summary>Corpus et exclusions appliqués</summary>{r.sources.map((s:any)=><p key={s.id}>{s.title}</p>)}<p>Bibliographie {(apercu?.options??d.options).bibliographie?"exclue":"incluse"} · Passages entre guillemets {(apercu?.options??d.options).citations?"exclus":"inclus"}.</p></details></div>
+ <div className={"tab-pane "+(tab==="suivi"?"visible":"")}><h3>Historique de la version</h3>{d.journal.length?d.journal.map((j:any,i:number)=><article key={i} className="event"><b>{j.action}</b><small>{j.acteur} · {date(j.date)}</small><p>{j.motif}</p></article>):<p>Le suivi des décisions est disponible pour les devoirs déposés.</p>}</div></div></section></>}
+ {estEtudiant&&feedback&&<section className="panel review"><h3>Décision reçue</h3><p>{feedback.motif}</p>{feedback.conseil&&<><h4>Conseils de reprise</h4><p className="longtext">{feedback.conseil}</p></>}<small>{feedback.acteur} · {date(feedback.date)}</small></section>}
+ {estEtudiant&&d.journal.length>0&&<section className="panel review"><h3>Historique de la version</h3>{d.journal.map((j:any,i:number)=><article className="event" key={i}><b>{j.action}</b><small>{date(j.date)}</small><p>{j.motif}</p></article>)}</section>}
+ {(!lectureSeule&&latest)&&<section className="panel review"><h3>Décision du centre</h3><p>{espace.centre?"Examinez les passages et leurs sources avant de motiver la décision.":d.etat==="en_revue"||d.etat==="reexamen"?"Votre devoir est dans la file de relecture du centre.":"Consultez le motif et les étapes précédentes dans l’onglet Suivi."}</p><div className="actions left">{espace.centre&&["en_revue","reexamen","incomplet"].includes(d.etat)&&<><button className="secondary" onClick={()=>ask("corriger")}>Demander une correction</button>{d.etat!=="incomplet"&&<><button className="primary" onClick={()=>ask("transmettre")}>Transmettre au professeur</button><button className="secondary" onClick={()=>ask("disciplinaire")}>Orienter vers la procédure disciplinaire</button></>}</>}{d.propre&&["corriger","incomplet"].includes(d.etat)&&<button className="primary" onClick={()=>go("revision/"+id)}>Déposer une nouvelle version</button>}{d.propre&&["corriger","disciplinaire"].includes(d.etat)&&<button className="secondary" onClick={()=>ask("contester")}>Demander un réexamen</button>}</div></section>}
+ {msg&&<Notice>{msg}</Notice>}{err&&!action&&<Notice tone="error">{err}</Notice>}
+ <div className="report-tools"><button className="secondary" onClick={()=>window.print()}><Icon name="printer" size={16}/>Imprimer / PDF</button>{<><a className="secondary" href={"/api/devoirs/"+id+"/original"} download><Icon name="download" size={16}/>Télécharger l’original</a>{espace.centre&&d.consentCorpus&&!d.partial&&r.total>=8&&!espace.sources.some((s:any)=>s.devoir===id)&&<button className="text-button" onClick={()=>ask("indexer")}>Ajouter cette version au corpus</button>}</>}</div>
+ {passage&&<Modal title="Comparer les passages" onClose={()=>Passage(null)}><div className="comparaison"><div><h3>Devoir</h3><blockquote><mark>{passage.devoir}</mark></blockquote></div><div><h3>{passage.titre}</h3><blockquote><mark>{passage.source}</mark></blockquote></div></div></Modal>}
+ {action&&<Modal title={({transmettre:"Transmettre au professeur",disciplinaire:"Orienter vers la procédure disciplinaire",corriger:"Demander une correction",contester:"Demander un réexamen",indexer:"Ajouter au corpus"} as any)[action]} onClose={()=>!saving&&A("")}><form onSubmit={valider}>{action==="indexer"?<p>Le déposant a autorisé la réutilisation de cette version. Les prochains devoirs pourront être comparés avec ses passages. Les révisions de ce même devoir seront exclues.</p>:<FormField label="Motif"><textarea rows={4} required maxLength={1600} value={motif} onChange={e=>M(e.target.value)} placeholder="Précisez ce que vous avez vérifié ou ce qui doit être corrigé."/></FormField>}{action==="corriger"&&<FormField label="Passages à reprendre et conseils"><textarea rows={4} maxLength={1600} value={conseil} onChange={e=>C(e.target.value)}/></FormField>}{err&&<Notice tone="error">{err}</Notice>}<div className="actions"><button type="button" className="secondary" disabled={saving} onClick={()=>A("")}>Annuler</button><button className="primary" disabled={saving}>Confirmer</button></div></form></Modal>}</>
+}
+

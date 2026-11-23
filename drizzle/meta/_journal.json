@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1795124890591,
+      "tag": "0000_graceful_komodo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1795125725125,
+      "tag": "0001_misty_retro_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795161702156,
+      "tag": "0002_mixed_ghost_rider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795161860830,
+      "tag": "0003_married_overlord",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795161977060,
+      "tag": "0004_acoustic_owl",
+      "breakpoints": true
+    }
+  ]
+}

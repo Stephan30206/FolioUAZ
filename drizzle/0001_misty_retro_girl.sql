@@ -1,0 +1,1 @@
+ALTER TABLE `sources` ADD `partage` integer DEFAULT 0 NOT NULL;

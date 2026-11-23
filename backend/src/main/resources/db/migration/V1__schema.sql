@@ -1,0 +1,11 @@
+CREATE TABLE comptes(email varchar(160) PRIMARY KEY, nom varchar(120) NOT NULL, secret varchar(100) NOT NULL, role varchar(20) NOT NULL CHECK(role IN ('admin','centre','professeur','etudiant')));
+CREATE TABLE cours(id uuid PRIMARY KEY, nom varchar(120) NOT NULL UNIQUE, professeur varchar(160) NOT NULL REFERENCES comptes(email));
+CREATE TABLE inscriptions(cours_id uuid REFERENCES cours(id), etudiant varchar(160) REFERENCES comptes(email), PRIMARY KEY(cours_id,etudiant));
+CREATE TABLE devoirs(id uuid PRIMARY KEY, cours_id uuid NOT NULL REFERENCES cours(id), titre varchar(160) NOT NULL, echeance date, maximum integer NOT NULL CHECK(maximum BETWEEN 1 AND 100));
+CREATE TABLE depots(id uuid PRIMARY KEY, dossier uuid NOT NULL, version integer NOT NULL, devoir_id uuid NOT NULL REFERENCES devoirs(id), etudiant varchar(160) NOT NULL REFERENCES comptes(email), professeur varchar(160) NOT NULL REFERENCES comptes(email), etat varchar(22) NOT NULL, fichier varchar(240) NOT NULL, original bytea NOT NULL, texte text NOT NULL, rapport text NOT NULL, consent boolean NOT NULL, cree timestamptz NOT NULL, UNIQUE(devoir_id,etudiant,version));
+CREATE TABLE sources(id uuid PRIMARY KEY, titre varchar(160) NOT NULL, fichier varchar(240) NOT NULL, texte text NOT NULL, dossier uuid, depot_id uuid UNIQUE REFERENCES depots(id), cree timestamptz NOT NULL);
+CREATE TABLE journal(id uuid PRIMARY KEY, depot_id uuid NOT NULL REFERENCES depots(id), acteur varchar(160) NOT NULL REFERENCES comptes(email), action varchar(40) NOT NULL, motif text NOT NULL, conseil text NOT NULL, date timestamptz NOT NULL);
+CREATE INDEX journal_depot ON journal(depot_id,date);
+CREATE TABLE reglages(id integer PRIMARY KEY, bibliographie boolean NOT NULL, citations boolean NOT NULL, minimum integer NOT NULL, bas integer, moyen integer, conservation integer);
+CREATE TABLE verrou(id integer PRIMARY KEY);
+INSERT INTO verrou VALUES(1);
